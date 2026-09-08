@@ -1,30 +1,17 @@
--- Run once in your existing Supabase project's SQL editor.
--- No Auth configuration, service-role key or extra server is required.
+-- ONE TIME: apply to the existing database, never rerun 001 against it.
+-- The reset and validation change are atomic. Existing RLS/grants stay in place.
 begin;
-create extension if not exists pgcrypto;
-create table public.birthday_votes (
- id uuid primary key default gen_random_uuid(),
- name text not null check (char_length(name) between 1 and 60),
- name_key text generated always as (lower(regexp_replace(btrim(name), '\s+', ' ', 'g'))) stored unique,
- ranking jsonb not null check (
-   jsonb_typeof(ranking) = 'array' and jsonb_array_length(ranking) = 5
-   and ranking @> '["cut-and-craft","ivy","maricarmen","pasta-factory","rosas-thai"]'::jsonb
- ),
- created_at timestamptz not null default now(),
- updated_at timestamptz not null default now()
+lock table public.birthday_votes, public.birthday_vote_owners in access exclusive mode;
+TRUNCATE TABLE
+  public.birthday_vote_owners,
+  public.birthday_votes
+RESTART IDENTITY
+CASCADE;
+alter table public.birthday_votes drop constraint birthday_votes_ranking_check;
+alter table public.birthday_votes add constraint birthday_votes_ranking_check check (
+ jsonb_typeof(ranking) = 'array' and jsonb_array_length(ranking) = 6
+ and ranking @> '["cut-and-craft","ivy","maricarmen","pasta-factory","rosas-thai","etci-mehmet"]'::jsonb
 );
--- Kept separate: public rankings never disclose a write credential or hash.
-create table public.birthday_vote_owners (
- vote_id uuid primary key references public.birthday_votes(id) on delete cascade,
- token_hash bytea not null
-);
-alter table public.birthday_votes enable row level security;
-alter table public.birthday_vote_owners enable row level security;
-revoke all on public.birthday_votes from anon, authenticated;
-revoke all on public.birthday_vote_owners from public, anon, authenticated;
-grant select (id,name,ranking,created_at,updated_at) on public.birthday_votes to anon, authenticated;
-create policy "Public birthday rankings" on public.birthday_votes for select to anon, authenticated using (true);
-
 create or replace function public.submit_birthday_vote(p_name text, p_ranking jsonb, p_token text)
 returns uuid
 language plpgsql security definer set search_path = ''
@@ -39,8 +26,8 @@ begin
  end if;
  if p_token is null or p_token !~ '^[a-f0-9]{64}$' then raise exception 'Invalid browser token'; end if;
  if p_ranking is null or jsonb_typeof(p_ranking) <> 'array' then raise exception 'Invalid ranking'; end if;
- if jsonb_array_length(p_ranking) <> 5 or not (p_ranking @> '["cut-and-craft","ivy","maricarmen","pasta-factory","rosas-thai"]'::jsonb) then
-  raise exception 'Rank all five restaurants exactly once';
+ if jsonb_array_length(p_ranking) <> 6 or not (p_ranking @> '["cut-and-craft","ivy","maricarmen","pasta-factory","rosas-thai","etci-mehmet"]'::jsonb) then
+  raise exception 'Rank all six restaurants exactly once';
  end if;
  -- Serialize claims/edits of the same normalized name, including first submissions.
  perform pg_advisory_xact_lock(hashtextextended(lower(clean_name), 0));

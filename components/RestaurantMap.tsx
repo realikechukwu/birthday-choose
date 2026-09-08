@@ -1,0 +1,7 @@
+'use client';
+import {useEffect,useRef,useState} from 'react';
+import {restaurants, type Restaurant} from '../data/restaurants';
+import type {Map as LeafletMap} from 'leaflet';
+export default function RestaurantMap({onSelect}:{onSelect:(r:Restaurant)=>void}){const ref=useRef<HTMLDivElement>(null);const map=useRef<LeafletMap|null>(null);const [error,setError]=useState(false);const callback=useRef(onSelect);callback.current=onSelect;
+useEffect(()=>{let active=true;import('leaflet').then(L=>{if(!active||!ref.current)return;map.current=L.map(ref.current,{scrollWheelZoom:false}).setView([53.482,-2.240],14);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',maxZoom:19}).addTo(map.current).on('tileerror',()=>setError(true));restaurants.forEach((r,i)=>L.marker(r.coordinates,{title:r.name,alt:r.name,icon:L.divIcon({className:'map-marker',html:`<span>${i+1}</span>`,iconSize:[34,34],iconAnchor:[17,34]})}).addTo(map.current!).on('click',()=>callback.current(r)));}).catch(()=>setError(true));return()=>{active=false;map.current?.remove();map.current=null}},[]);
+return <><div ref={ref} className="map" aria-label="Map of five Manchester restaurants"/>{error&&<p className="small">Map tiles could not load. Use the venue directions links below.</p>}<div className="map-key">{restaurants.map((r,i)=><button key={r.id} onClick={()=>onSelect(r)}><span>{i+1}</span>{r.shortName}</button>)}</div></>}
